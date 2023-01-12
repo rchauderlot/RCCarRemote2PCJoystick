@@ -2,12 +2,14 @@
 #include <limits.h>
 
 // Enable to export a joystick using the usb of the leonardo/micro pro (atmega32U4) 
-#define JOYSTICK_OUTPUT_ENABLE 
-//#define JOYSTICK_DEBUG_ENABLE
-//#define POSITION_DEBUG_ENABLE
-//#define PULSE_DEBUG_ENABLE
-#define COUNT_OF_PULSES_TO_SHOW_DEBUG 10
+#define JOYSTICK_OUTPUT_ENABLE
 
+// Enable Debug
+#define JOYSTICK_DEBUG_ENABLE
+#define POSITION_DEBUG_ENABLE
+//#define PULSE_DEBUG_ENABLE
+//#define COUNT_OF_PULSES_TO_SHOW_DEBUG 10
+#define DEBUG_PERIOD 500000 // in micros
 
 // DONT SET AVOBE 3 IF THE SERIAL DEBUG IS ENABLED (pins 0 and 1 cant be used to get interruptions and the serial port at the same time)
 #define CHANNEL_COUNT 1 
@@ -33,6 +35,8 @@ float channelMin[CHANNEL_COUNT];
 float lastChannelValue[CHANNEL_COUNT];
 unsigned long pulseBeginningTime[CHANNEL_COUNT];
 unsigned long pulseTransitionTime[CHANNEL_COUNT];
+unsigned long lastDebugTime = 0;
+
 
 /*
 Interruption array
@@ -250,23 +254,7 @@ void onPulseEnds(int channel, unsigned long endTime) {
 
   int value = computeValue(pulseBeginningTime[channel], pulseTransitionTime[channel], endTime);
 
-#ifdef PULSE_DEBUG_ENABLE
-  if (pulseCount >= COUNT_OF_PULSES_TO_SHOW_DEBUG) {
-    pulseCount = 0;
-    Serial.print("Pulse channel ");
-    Serial.print(channel);
-    Serial.print(" starts ");
-    Serial.print(pulseBeginningTime[channel]);
-    Serial.print(" transits ");
-    Serial.print(pulseTransitionTime[channel]);
-    Serial.print(" ends ");
-    Serial.print(endTime);
-    Serial.print(" value ");
-    Serial.println(value);
-  } else {
-    pulseCount++;
-  }
-#endif
+  debugPulse();
 
   if (channelBootReadingCount[channel] < initialDiscardedBootReadings + calibrationBootReadings) {
       // Discarding the frist n samples
@@ -340,40 +328,22 @@ void channel4Rising() {
   channelRising(4);
 }
 
-
 /*********************************
-* Program control
+* Debug functions
 **********************************/
-void setup() {
-
-
-  for (int i=0; i < CHANNEL_COUNT; i++) {
-    initializeChannel(i);
+void debugLoop() {
+#ifdef JOYSTICK_DEBUG_ENABLE || POSITION_DEBUG_ENABLE
+  unsigned long currentTime = micros();
+  if (currentTime > lastDebugTime + DEBUG_PERIOD) {
+    lastDebugTime = currentTime;
+    debugPosition();
+    debugJoystick();
+    Serial.println("");  
   }
-
-
-#ifdef JOYSTICK_OUTPUT_ENABLE
-  // Initialize Joystick Library
-  joystick.begin();
-
-  joystick.setSteeringRange(MIN_JOYSTICK_VALUE, MAX_JOYSTICK_VALUE);
-  joystick.setAcceleratorRange(MIN_JOYSTICK_VALUE, MAX_JOYSTICK_VALUE);
-  joystick.setBrakeRange(MIN_JOYSTICK_VALUE, MAX_JOYSTICK_VALUE);
-  if (CHANNEL_COUNT == 5) {
-    joystick.setZAxisRange(MIN_JOYSTICK_VALUE, MAX_JOYSTICK_VALUE);
-  }
-
 #endif
-
-#ifdef POSITION_DEBUG_ENABLE || JOYSTICK_DEBUG_ENABLE || PULSE_DEBUG_ENABLE
-  Serial.begin(115200);  
-#endif
-
 }
 
-
-void loop() {
-
+void debugPosition() {
 #ifdef POSITION_DEBUG_ENABLE
   for (int i = 0; i < CHANNEL_COUNT; i++) {
     if (i == 0) {
@@ -408,7 +378,10 @@ void loop() {
     Serial.print("% ");
   }
 #endif
-#ifdef JOYSTICK_DEBUG_ENABLE 
+}
+
+void debugJoystick() {
+ #ifdef JOYSTICK_DEBUG_ENABLE 
   Serial.print("JOY Steer ");
   Serial.print(joystickSteeringPosition);
   Serial.print(" Accel ");
@@ -420,9 +393,62 @@ void loop() {
   Serial.print(" min ");
   Serial.print(MAX_JOYSTICK_VALUE);
 #endif
-#ifdef JOYSTICK_DEBUG_ENABLE || POSITION_DEBUG_ENABLE
-  Serial.println("");  
-  delay(350);
+}
+
+
+void debugPulse() {
+#ifdef PULSE_DEBUG_ENABLE
+  if (pulseCount >= COUNT_OF_PULSES_TO_SHOW_DEBUG) {
+    pulseCount = 0;
+    Serial.print("Pulse channel ");
+    Serial.print(channel);
+    Serial.print(" starts ");
+    Serial.print(pulseBeginningTime[channel]);
+    Serial.print(" transits ");
+    Serial.print(pulseTransitionTime[channel]);
+    Serial.print(" ends ");
+    Serial.print(endTime);
+    Serial.print(" value ");
+    Serial.println(value);
+  } else {
+    pulseCount++;
+  }
 #endif
+}
+
+/*********************************
+* Program control
+**********************************/
+void setup() {
+
+
+  for (int i=0; i < CHANNEL_COUNT; i++) {
+    initializeChannel(i);
+  }
+
+
+#ifdef JOYSTICK_OUTPUT_ENABLE
+  // Initialize Joystick Library
+  joystick.begin();
+
+  joystick.setSteeringRange(MIN_JOYSTICK_VALUE, MAX_JOYSTICK_VALUE);
+  joystick.setAcceleratorRange(MIN_JOYSTICK_VALUE, MAX_JOYSTICK_VALUE);
+  joystick.setBrakeRange(MIN_JOYSTICK_VALUE, MAX_JOYSTICK_VALUE);
+  if (CHANNEL_COUNT == 5) {
+    joystick.setZAxisRange(MIN_JOYSTICK_VALUE, MAX_JOYSTICK_VALUE);
+  }
+
+#endif
+
+#ifdef POSITION_DEBUG_ENABLE || JOYSTICK_DEBUG_ENABLE || PULSE_DEBUG_ENABLE
+  Serial.begin(115200);  
+#endif
+
+}
+
+
+void loop() {
+
+  debugLoop();
 }
 
