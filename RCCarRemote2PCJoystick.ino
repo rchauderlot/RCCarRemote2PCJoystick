@@ -6,13 +6,14 @@
 
 // Enable Debug
 #define JOYSTICK_DEBUG_ENABLE
-#define POSITION_DEBUG_ENABLE
+//#define POSITION_DEBUG_ENABLE
+const unsigned long DEBUG_PERIOD = 500000; // in micros
 //#define PULSE_DEBUG_ENABLE
-//#define COUNT_OF_PULSES_TO_SHOW_DEBUG 10
-#define DEBUG_PERIOD 500000 // in micros
+//#define COUNT_OF_PULSES_TO_SHOW_DEBUG 20
+
 
 // DONT SET AVOBE 3 IF THE SERIAL DEBUG IS ENABLED (pins 0 and 1 cant be used to get interruptions and the serial port at the same time)
-#define CHANNEL_COUNT 1 
+#define CHANNEL_COUNT 2 
 // Number of pins that can trigger interruptions, 5 for arduino micro pro
 #define SUPPORTED_CHANNEL_MAX_COUNT 5
 
@@ -20,7 +21,7 @@
 const int channelPin[SUPPORTED_CHANNEL_MAX_COUNT] = {2,3,7,1,0}; // Available pins with interruptions for arduino micro pro
 const int initialDiscardedBootReadings = 3;
 const int calibrationBootReadings = 9;
-const long VALUE_RESOLUTION = 1024; // Ammount of different levels in a reading
+const long VALUE_RESOLUTION = 2048; // Ammount of different levels in a reading
 float hysteresisPercentage = 3.0;
 
 
@@ -34,7 +35,8 @@ float channelMax[CHANNEL_COUNT];
 float channelMin[CHANNEL_COUNT];
 float lastChannelValue[CHANNEL_COUNT];
 unsigned long pulseBeginningTime[CHANNEL_COUNT];
-unsigned long pulseTransitionTime[CHANNEL_COUNT];
+unsigned long pulseOnDuration[CHANNEL_COUNT];
+unsigned long pulseDuration[CHANNEL_COUNT];
 unsigned long lastDebugTime = 0;
 
 
@@ -180,6 +182,8 @@ void initializeChannel(int channel) {
   pinMode(channelPin[channel], INPUT);
   attachInterrupt(digitalPinToInterrupt(channelPin[channel]), channelFallingFunc[channel], FALLING);
   pulseBeginningTime[channel] = micros();
+  pulseOnDuration[channel] = 0;
+  pulseDuration[channel] = 0;
 
 }
 
@@ -212,12 +216,12 @@ bool channelValueUpdate(int channel, float value) {
 }
 
 
-float computeValue(unsigned long pulseStartMicros, unsigned long pulseTransitionMicros, unsigned long pulseEndMicros) {
+float computeValue(unsigned long pulseHighDurationInMicros, unsigned long pulseLengthInMicros) {
   //long pulseHighDurationInMicros = pulseTransitionMicros - pulseStartMicros;
   //return pulseHighDurationInMicros;
 
-  unsigned long pulseLengthInMicros = pulseEndMicros - pulseStartMicros;
-  unsigned long pulseHighDurationInMicros = pulseTransitionMicros - pulseStartMicros;
+  //unsigned long pulseLengthInMicros = pulseEndMicros - pulseStartMicros;
+  //unsigned long pulseHighDurationInMicros = pulseTransitionMicros - pulseStartMicros;
   return (VALUE_RESOLUTION * pulseHighDurationInMicros) / pulseLengthInMicros;
 }
 
@@ -246,15 +250,20 @@ void onPulseBegins(int channel, unsigned long startTime) {
 }
 
 void onPulseTransits(int channel, unsigned long transitTime) {
-  pulseTransitionTime[channel] = transitTime; 
+  pulseOnDuration[channel] = transitTime - pulseBeginningTime[channel]; 
 }
 
 
 void onPulseEnds(int channel, unsigned long endTime) {
+  pulseDuration[channel] = endTime - pulseBeginningTime[channel];
+  //debugPulse(channel, pulseBeginningTime[channel], pulseBeginningTime[channel] + pulseOnDuration[channel], endTime);
+}
 
-  int value = computeValue(pulseBeginningTime[channel], pulseTransitionTime[channel], endTime);
 
-  debugPulse();
+void onPulseRead(int channel, unsigned long pulseHighDuration, unsigned long pulseLength) {
+  float value = computeValue(pulseHighDuration, pulseLength);
+
+  debugReading(channel, pulseHighDuration, pulseLength, value);
 
   if (channelBootReadingCount[channel] < initialDiscardedBootReadings + calibrationBootReadings) {
       // Discarding the frist n samples
@@ -271,7 +280,19 @@ void onPulseEnds(int channel, unsigned long endTime) {
   }
 }
 
+void pulseLoop() { 
 
+  for (int channel = 0; channel < CHANNEL_COUNT; channel++) {
+
+    unsigned long pulseLength = pulseDuration[channel];
+    if (pulseLength != 0) {
+      pulseDuration[channel] = 0;
+      unsigned long pulseHighDuration = pulseOnDuration[channel];
+      onPulseRead(channel, pulseHighDuration, pulseLength);
+
+    }
+  }
+}
 
 /*********************************
 * Interruption handling
@@ -332,14 +353,16 @@ void channel4Rising() {
 * Debug functions
 **********************************/
 void debugLoop() {
-#ifdef JOYSTICK_DEBUG_ENABLE || POSITION_DEBUG_ENABLE
+#if defined(JOYSTICK_DEBUG_ENABLE) || defined(POSITION_DEBUG_ENABLE)
+
   unsigned long currentTime = micros();
   if (currentTime > lastDebugTime + DEBUG_PERIOD) {
     lastDebugTime = currentTime;
     debugPosition();
     debugJoystick();
-    Serial.println("");  
+    Serial.println("");
   }
+
 #endif
 }
 
@@ -396,18 +419,34 @@ void debugJoystick() {
 }
 
 
-void debugPulse() {
+void debugPulse(int channel, unsigned long beginningTime, unsigned long transitionTime, unsigned long endTime) {
 #ifdef PULSE_DEBUG_ENABLE
   if (pulseCount >= COUNT_OF_PULSES_TO_SHOW_DEBUG) {
     pulseCount = 0;
     Serial.print("Pulse channel ");
     Serial.print(channel);
     Serial.print(" starts ");
-    Serial.print(pulseBeginningTime[channel]);
+    Serial.print(beginningTime);
     Serial.print(" transits ");
-    Serial.print(pulseTransitionTime[channel]);
+    Serial.print(transitionTime);
     Serial.print(" ends ");
-    Serial.print(endTime);
+    Serial.println(endTime);
+  } else {
+    pulseCount++;
+  }
+#endif
+}
+
+void debugReading(int channel, unsigned long onTime, unsigned long pulseLength, float value) {
+#ifdef PULSE_DEBUG_ENABLE
+  if (pulseCount >= COUNT_OF_PULSES_TO_SHOW_DEBUG) {
+    pulseCount = 0;
+    Serial.print("Reading channel ");
+    Serial.print(channel);
+    Serial.print(" ON ");
+    Serial.print(onTime);
+    Serial.print(" length ");
+    Serial.print(pulseLength);
     Serial.print(" value ");
     Serial.println(value);
   } else {
@@ -440,7 +479,7 @@ void setup() {
 
 #endif
 
-#ifdef POSITION_DEBUG_ENABLE || JOYSTICK_DEBUG_ENABLE || PULSE_DEBUG_ENABLE
+#if defined(JOYSTICK_DEBUG_ENABLE) || defined(POSITION_DEBUG_ENABLE) || defined(PULSE_DEBUG_ENABLE)
   Serial.begin(115200);  
 #endif
 
@@ -448,7 +487,7 @@ void setup() {
 
 
 void loop() {
-
+  pulseLoop();
   debugLoop();
 }
 
