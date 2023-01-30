@@ -205,6 +205,8 @@ bool channelLimitsUpdate(int channel, float reading) {
 
     if (channeNewMinReadingCount[channel] >= (calibrationReadings - 1)) {
       channelMin[channel] = newChannelMin[channel] / calibrationReadings;
+      channeNewMinReadingCount[channel] = 0;
+      newChannelMin[channel] = 0;
       limitChanged = true;
     } else {
       channeNewMinReadingCount[channel]++;
@@ -221,14 +223,16 @@ bool channelLimitsUpdate(int channel, float reading) {
     newChannelMax[channel] += reading;
     if (channeNewMaxReadingCount[channel] >= (calibrationReadings - 1)) {
       channelMax[channel] = newChannelMax[channel] / calibrationReadings;
+      channeNewMaxReadingCount[channel] = 0;
+      newChannelMax[channel] = 0;
       limitChanged = true;
     } else {
       channeNewMaxReadingCount[channel]++;
-      newChannelMax[channel] = 0;
     }
 
   } else {
     channeNewMaxReadingCount[channel] = 0;
+    newChannelMax[channel] = 0;
   }
   return limitChanged;
 
