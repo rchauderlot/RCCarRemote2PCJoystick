@@ -5,7 +5,7 @@
 #define JOYSTICK_OUTPUT_ENABLE
 
 // Enable Debug
-#define JOYSTICK_DEBUG_ENABLE
+//#define JOYSTICK_DEBUG_ENABLE
 //#define POSITION_DEBUG_ENABLE
 const unsigned long DEBUG_PERIOD = 500000; // in micros
 //#define PULSE_DEBUG_ENABLE
@@ -20,7 +20,7 @@ const unsigned long DEBUG_PERIOD = 500000; // in micros
 
 const int channelPin[SUPPORTED_CHANNEL_MAX_COUNT] = {2,3,7,1,0}; // Available pins with interruptions for arduino micro pro
 const int initialDiscardedBootReadings = 3;
-const int calibrationBootReadings = 9;
+const int calibrationReadings = 5;
 const long VALUE_RESOLUTION = 2048; // Ammount of different levels in a reading
 float hysteresisPercentage = 3.0;
 
@@ -30,6 +30,10 @@ float hysteresisPercentage = 3.0;
  Internal status
 */
 long channelBootReadingCount[CHANNEL_COUNT];
+long channeNewMaxReadingCount[CHANNEL_COUNT];
+long channeNewMinReadingCount[CHANNEL_COUNT];
+float newChannelMax[CHANNEL_COUNT];
+float newChannelMin[CHANNEL_COUNT];
 float channelValueAtBoot[CHANNEL_COUNT];
 float channelMax[CHANNEL_COUNT];
 float channelMin[CHANNEL_COUNT];
@@ -174,8 +178,12 @@ void updateCH5(float value, float min, float max) {
 **********************************/
 void initializeChannel(int channel) {
   
-  channelMax[channel] = LONG_MIN;
-  channelMin[channel] = LONG_MAX;
+  channelMax[channel] = -9999999;
+  channelMin[channel] = 9999999;
+  newChannelMax[channel] = 0;
+  newChannelMin[channel] = 0;
+  channeNewMaxReadingCount[channel] = 0;
+  channeNewMinReadingCount[channel] = 0;
   channelBootReadingCount[channel] = 0;
   channelValueAtBoot[channel] = 0;
 
@@ -192,12 +200,35 @@ bool channelLimitsUpdate(int channel, float reading) {
 
   bool limitChanged = false;
   if (reading < channelMin[channel]) {
-      channelMin[channel] = reading;
+
+    newChannelMin[channel] += reading;
+
+    if (channeNewMinReadingCount[channel] >= (calibrationReadings - 1)) {
+      channelMin[channel] = newChannelMin[channel] / calibrationReadings;
       limitChanged = true;
+    } else {
+      channeNewMinReadingCount[channel]++;
+    }
+  } else {
+    channeNewMinReadingCount[channel] = 0;
+    newChannelMin[channel] = 0;
   }
+
+  
+
   if (reading > channelMax[channel]) {
-    channelMax[channel] = reading;
-    limitChanged = true;
+
+    newChannelMax[channel] += reading;
+    if (channeNewMaxReadingCount[channel] >= (calibrationReadings - 1)) {
+      channelMax[channel] = newChannelMax[channel] / calibrationReadings;
+      limitChanged = true;
+    } else {
+      channeNewMaxReadingCount[channel]++;
+      newChannelMax[channel] = 0;
+    }
+
+  } else {
+    channeNewMaxReadingCount[channel] = 0;
   }
   return limitChanged;
 
@@ -265,11 +296,11 @@ void onPulseRead(int channel, unsigned long pulseHighDuration, unsigned long pul
 
   debugReading(channel, pulseHighDuration, pulseLength, value);
 
-  if (channelBootReadingCount[channel] < initialDiscardedBootReadings + calibrationBootReadings) {
+  if (channelBootReadingCount[channel] < initialDiscardedBootReadings + calibrationReadings) {
       // Discarding the frist n samples
     if (channelBootReadingCount[channel] >= initialDiscardedBootReadings) {
       // Using the rest of the initial samples to calibrate the idle status.
-      channelAtBootCalibration(channel, value, channelBootReadingCount[channel] - initialDiscardedBootReadings, calibrationBootReadings);
+      channelAtBootCalibration(channel, value, channelBootReadingCount[channel] - initialDiscardedBootReadings, calibrationReadings);
     }
     channelBootReadingCount[channel]++;
 
